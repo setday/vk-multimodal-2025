@@ -54,6 +54,12 @@ def build_corpus(sample_size: int | None = None) -> dict:
     ids: list[str] = []
     seen_ids: set[str] = set()
 
+    tag_names, tag_embeddings = _build_tag_bank(text_encoder)
+    (paths.indexes_dir / "labels").mkdir(parents=True, exist_ok=True)
+    with open(paths.indexes_dir / "labels" / "omni_tags.json", "w", encoding="utf-8") as fout:
+        json.dump(tag_names, fout, ensure_ascii=False, indent=2)
+    np.save(paths.indexes_dir / "labels" / "omni_tag_embeddings.npy", tag_embeddings)
+
     dataset_iter = WikiArtStream(sample_size)
     iterator = tqdm(dataset_iter, total=sample_size, desc="Streaming WikiArt")
     batch_size = CONFIG.models.batch_size
@@ -89,8 +95,11 @@ def build_corpus(sample_size: int | None = None) -> dict:
         text_feats = text_encoder.encode(batch_captions).numpy()
         caption_embeddings.append(text_feats)
 
-        for meta, caption in zip(batch_metadata, batch_captions):
+        batch_tag_lists = _compute_omni_features(img_feats, tag_embeddings, tag_names)
+
+        for meta, caption, tag_list in zip(batch_metadata, batch_captions, batch_tag_lists):
             meta["caption"] = caption
+            meta["tags"] = json.dumps(tag_list, ensure_ascii=False)
             records.append(meta)
 
     image_matrix = np.vstack(image_embeddings)
@@ -138,6 +147,56 @@ def build_corpus(sample_size: int | None = None) -> dict:
         "image_embeddings": image_matrix.shape,
         "caption_embeddings": caption_matrix.shape,
     }
+
+
+def _build_tag_bank(text_encoder: TextEncoder) -> tuple[list[str], np.ndarray]:
+    tags = [
+        # Color palettes
+        "vibrant colors",
+        "muted palette",
+        "monochrome tones",
+        "warm lighting",
+        "cool lighting",
+        # Composition & subject
+        "detailed portrait",
+        "crowded scene",
+        "solitary figure",
+        "dynamic movement",
+        "symmetrical composition",
+        # Mood descriptors
+        "dreamlike atmosphere",
+        "somber mood",
+        "joyful energy",
+        "mysterious setting",
+        "romantic theme",
+        # Contextual cues
+        "mythological elements",
+        "religious symbolism",
+        "nature landscape",
+        "urban landscape",
+        "interior scene",
+        # Techniques
+        "thick brushstrokes",
+        "fine detail work",
+        "geometric abstraction",
+        "soft gradients",
+    ]
+    embeddings = text_encoder.encode(tags).numpy()
+    return tags, embeddings
+
+
+def _compute_omni_features(
+    image_vectors: np.ndarray,
+    tag_matrix: np.ndarray,
+    tag_names: list[str],
+    top_k: int = 3,
+) -> list[list[str]]:
+    similarities = image_vectors @ tag_matrix.T
+
+    top_indices = np.argsort(similarities, axis=1)[:, -top_k:][:, ::-1]
+    tag_lists: list[list[str]] = [[tag_names[idx] for idx in row] for row in top_indices]
+
+    return tag_lists
 
 
 def build_indexes(

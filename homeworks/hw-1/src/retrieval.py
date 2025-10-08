@@ -15,26 +15,40 @@ from .embeddings import ImageEncoder, TextEncoder
 from .indexers import AnnoyVectorIndex
 
 
-@dataclass
-class RetrievalAssets:
-    metadata: pd.DataFrame
-    image_index: AnnoyVectorIndex
-    caption_index: AnnoyVectorIndex
-    image_embeddings: np.ndarray
-    caption_embeddings: np.ndarray
-
-
 class RetrievalService:
     def __init__(self) -> None:
         cfg = CONFIG
         cfg.prepare()
         paths = cfg.paths
+        
+        def _parse_tags(value: object) -> list[str]:
+            if isinstance(value, str):
+                try:
+                    parsed = json.loads(value)
+                    if isinstance(parsed, list):
+                        return [str(item) for item in parsed]
+                except json.JSONDecodeError:
+                    return [part.strip() for part in value.split(",") if part.strip()]
+            elif isinstance(value, (list, tuple, set)):
+                return [str(item) for item in value]
+            return []
 
         metadata_df = pd.read_parquet(paths.omni_metadata_path).set_index("id")
+        if "tags" in metadata_df.columns:
+            metadata_df["tags"] = metadata_df["tags"].apply(_parse_tags)
+        else:
+            metadata_df["tags"] = [[] for _ in range(len(metadata_df))]
+        metadata_df["style"] = metadata_df["style"].fillna("unknown")
+        metadata_df["genre"] = metadata_df["genre"].fillna("unknown")
         self.metadata = metadata_df
+        self.id_to_idx = {sample_id: idx for idx, sample_id in enumerate(self.metadata.index)}
 
-        self.image_embeddings = np.load(paths.embeddings_dir / "image_embeddings.npy")
+        self.omni_tag_matrix = np.load(paths.indexes_dir / "labels" / "omni_tag_embeddings.npy")
+        with open(paths.indexes_dir / "labels" / "omni_tags.json", "r", encoding="utf-8") as fin:
+            self.omni_tags: list[str] = json.load(fin)
+
         self.caption_embeddings = np.load(paths.embeddings_dir / "caption_embeddings.npy")
+        self.image_embeddings = np.load(paths.embeddings_dir / "image_embeddings.npy")
 
         self.image_index = AnnoyVectorIndex(
             dimension=self.image_embeddings.shape[1],
@@ -77,3 +91,54 @@ class RetrievalService:
         embedding = self.text_encoder.encode([caption]).numpy()[0]
         results = self.caption_index.query(embedding, top_k=top_k)
         return [self._metadata_for(sample_id) | {"distance": float(distance)} for sample_id, distance in results]
+
+    def search_omni(
+        self,
+        text_query: str | None = None,
+        styles: Optional[Iterable[str]] = None,
+        genres: Optional[Iterable[str]] = None,
+        extra_tags: Optional[Iterable[str]] = None,
+        top_k: int | None = None,
+    ) -> list[dict]:
+        candidate_ids = self._filter_candidates(
+            styles=styles or [],
+            genres=genres or [],
+            extra_tags=extra_tags or [],
+        )
+        if not candidate_ids:
+            return []
+
+        candidate_vectors = self.caption_embeddings[[self.id_to_idx[sample_id] for sample_id in candidate_ids]]
+        
+        if text_query:
+            temp_index = AnnoyVectorIndex(dimension=candidate_vectors.shape[1]) # Building runs quickly, so we can afford it in inference
+            temp_index.build(candidate_vectors, candidate_ids)
+
+            requested_top_k = top_k or CONFIG.index.top_k
+            requested_top_k = min(requested_top_k, len(candidate_ids))
+
+            text_embedding = self.text_encoder.encode([text_query]).numpy()[0]
+
+            results = temp_index.query(text_embedding, top_k=requested_top_k)
+        else:
+            results = [(sample_id, 0.0) for sample_id in candidate_ids[: top_k or len(candidate_ids)]]
+
+        formatted = [self._metadata_for(sample_id) | {"distance": float(distance)} for sample_id, distance in results]
+        return formatted
+
+    def _filter_candidates(
+        self,
+        styles: Iterable[str],
+        genres: Iterable[str],
+        extra_tags: Iterable[str],
+    ) -> list[str]:
+        df = self.metadata
+        mask = pd.Series(True, index=df.index)
+        if styles:
+            mask &= df["style"].isin(list(styles))
+        if genres:
+            mask &= df["genre"].isin(list(genres))
+        if extra_tags:
+            required_tags = set(extra_tags)
+            mask &= df["tags"].apply(lambda tags: required_tags.issubset(set(tags)))
+        return df.index[mask].tolist()

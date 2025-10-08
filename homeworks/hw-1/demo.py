@@ -42,17 +42,18 @@ def _format_results(results: list[dict]) -> list[tuple[str, str]]:
         genre_disp = MAPPING["genre"].get(item.get("genre", 0), "unknown")
         image_path = item.get("image_path", "")
         caption = item.get("caption", "")
+        tags_display = ", ".join(item.get("tags", []) or [])
 
         gallery_caption_parts = [artist_disp]
-        
         if style_disp != "unknown":
             gallery_caption_parts.append(style_disp)
         if genre_disp != "unknown":
             gallery_caption_parts.append(genre_disp)
         if caption:
             gallery_caption_parts.append(caption)
-
-        gallery_items.append((image_path, " - ".join(gallery_caption_parts)))
+        if tags_display:
+            gallery_caption_parts.append(f"Tags: {tags_display}")
+        gallery_items.append((image_path, " | ".join(gallery_caption_parts)))
     return gallery_items
 
 
@@ -72,8 +73,36 @@ def caption_to_image(query_text: str, top_k: int) -> list[tuple[str, str]]:
     return _format_results(results)
 
 
+def omni_to_image(
+    query_text: str,
+    styles: list[str],
+    genres: list[str],
+    tags: list[str],
+    top_k: int,
+) -> list[tuple[str, str]]:
+    if not any([query_text.strip(), styles, genres, tags]):
+        return []
+    service = get_service()
+    results = service.search_omni(
+        text_query=query_text.strip() or None,
+        styles=styles,
+        genres=genres,
+        extra_tags=tags,
+        top_k=top_k,
+    )
+    return _format_results(results)
+
 
 def build_demo() -> gr.Blocks:
+    service = get_service()
+    metadata = service.metadata.reset_index()
+    styles = sorted({style for style in metadata["style"].dropna().unique() if style})
+    genres = sorted({genre for genre in metadata["genre"].dropna().unique() if genre})
+    tags = service.omni_tags
+
+    style_choices = [(style, MAPPING["style"].get(style, "unknown")) for style in styles]
+    genre_choices = [(genre, MAPPING["genre"].get(genre, "unknown")) for genre in genres]
+
     with gr.Blocks(title="WikiArt Multimodal Retrieval") as demo:
         gr.Markdown(
             """
@@ -103,6 +132,21 @@ def build_demo() -> gr.Blocks:
                 caption_to_image,
                 inputs=[caption_input, caption_topk],
                 outputs=caption_gallery,
+            )
+
+        with gr.Tab("Omni Search"):
+            query_box = gr.Textbox(label="Свободный запрос", lines=2)
+            with gr.Row():
+                style_select = gr.CheckboxGroup(choices=style_choices, label="Стиль")
+                genre_select = gr.CheckboxGroup(choices=genre_choices, label="Жанр")
+                tag_select = gr.CheckboxGroup(choices=tags, label="Zero-Shot теги")
+            omni_topk = gr.Slider(3, 20, value=10, step=1, label="Top-K")
+            omni_gallery = gr.Gallery(label="Изображения", columns=5, height="auto")
+            omni_run = gr.Button("Объединить запрос")
+            omni_run.click(
+                omni_to_image,
+                inputs=[query_box, style_select, genre_select, tag_select, omni_topk],
+                outputs=omni_gallery,
             )
 
     return demo
