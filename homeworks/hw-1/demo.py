@@ -75,8 +75,8 @@ def caption_to_image(query_text: str, top_k: int) -> list[tuple[str, str]]:
 
 def omni_to_image(
     query_text: str,
-    styles: list[str],
-    genres: list[str],
+    styles: list[int],
+    genres: list[int],
     tags: list[str],
     top_k: int,
 ) -> list[tuple[str, str]]:
@@ -100,8 +100,8 @@ def build_demo() -> gr.Blocks:
     genres = sorted({genre for genre in metadata["genre"].dropna().unique() if genre})
     tags = service.omni_tags
 
-    style_choices = [(style, MAPPING["style"].get(style, "unknown")) for style in styles]
-    genre_choices = [(genre, MAPPING["genre"].get(genre, "unknown")) for genre in genres]
+    style_choices = [(MAPPING["style"].get(style, "unknown"), style) for style in styles]
+    genre_choices = [(MAPPING["genre"].get(genre, "unknown"), genre) for genre in genres]
 
     with gr.Blocks(title="WikiArt Multimodal Retrieval") as demo:
         gr.Markdown(

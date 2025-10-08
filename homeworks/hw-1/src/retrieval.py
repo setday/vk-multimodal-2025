@@ -95,8 +95,8 @@ class RetrievalService:
     def search_omni(
         self,
         text_query: str | None = None,
-        styles: Optional[Iterable[str]] = None,
-        genres: Optional[Iterable[str]] = None,
+        styles: Optional[Iterable[int]] = None,
+        genres: Optional[Iterable[int]] = None,
         extra_tags: Optional[Iterable[str]] = None,
         top_k: int | None = None,
     ) -> list[dict]:
@@ -128,8 +128,8 @@ class RetrievalService:
 
     def _filter_candidates(
         self,
-        styles: Iterable[str],
-        genres: Iterable[str],
+        styles: Iterable[int],
+        genres: Iterable[int],
         extra_tags: Iterable[str],
     ) -> list[str]:
         df = self.metadata
