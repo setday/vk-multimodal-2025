@@ -1,0 +1,33 @@
+{
+  "config": {
+    "paths": {
+      "root": "E:\\Projects\\HSE\\vk-multimodal-2025\\homeworks\\hw-1",
+      "cache_dir": "E:\\Projects\\HSE\\vk-multimodal-2025\\homeworks\\hw-1\\cache",
+      "embeddings_dir": "E:\\Projects\\HSE\\vk-multimodal-2025\\homeworks\\hw-1\\artifacts\\embeddings",
+      "indexes_dir": "E:\\Projects\\HSE\\vk-multimodal-2025\\homeworks\\hw-1\\artifacts\\indexes",
+      "omni_metadata_path": "E:\\Projects\\HSE\\vk-multimodal-2025\\homeworks\\hw-1\\artifacts\\datasets\\omni_metadata.parquet"
+    },
+    "dataset": {
+      "name": "huggan/wikiart",
+      "split": "train",
+      "streaming": true,
+      "seed": 42,
+      "sample_size": 5000,
+      "shuffle_buffer": 2048,
+      "image_column": "image",
+      "id_column": "id",
+      "artist_column": "artist",
+      "style_column": "style",
+      "genre_column": "genre"
+    },
+    "models": {
+      "image_encoder": "openai/clip-vit-base-patch32",
+      "caption_model": "Salesforce/blip-image-captioning-large",
+      "vlm_model": "openai/clip-vit-base-patch32",
+      "device": "cuda",
+      "batch_size": 8
+    },
+    "index": {
+      "metric": "angular",
+      "n_trees": 64,
+      "search_k": 

@@ -1,0 +1,5 @@
+__pycache__/
+artifacts/images/
+artifacts/embeddings/
+artifacts/indexes/
+artifacts/datasets/
